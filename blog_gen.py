@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import markdown
 
 
 def config_logging():
@@ -30,6 +31,22 @@ def config_logging():
     log.addHandler(fh)
 
 
+def markdown_file_to_html_list(input_path):
+    """translates the markdown file by returning a list of lines of code in html"""
+    temp_file_name = "temp_file.html"
+    temp_file_dir = os.path.dirname(os.path.realpath(__file__))
+    temp_file_path = os.path.join(temp_file_dir, temp_file_name)
+    html = markdown.markdownFromFile(
+        input=input_path,
+        output=temp_file_path,
+    )
+    f = open(temp_file_path, "r")
+    lines = f.readlines()
+    print(lines)
+    os.remove(temp_file_path)
+    return lines
+
+
 class JsonImporter:
     def __init__(self):
         # the json file should be in the same folder
@@ -48,3 +65,7 @@ if __name__ == "__main__":
     # importing config.json
     importer = JsonImporter()
     my_conf = importer.get_json()
+
+    # pending:
+    ## create a object that (1)opens the html template (2)inserts html lines previously converted into the right place and
+    ## (3)saves the html new file
