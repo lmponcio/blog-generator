@@ -2,8 +2,40 @@ import logging
 import json
 import os
 import markdown
+import shutil
+import datetime
 
 ########## defining functions for internal use
+def _get_first_file_ending_in(ending, path):
+    """Returns the first file ending in a specif way found in the given path"""
+    log.debug("file ending in %s will be searched at %s", ending, path)
+    # my_markup_path = ""
+    if os.path.isdir(path):
+        # log.debug("folder has been opened: %s", self.paths.bak_input)
+        # nonlocal my_markup_path
+        for dirname, subdirs, files in os.walk(path):
+            # log.debug(
+            #     "walking through files in input folder %s",
+            #     self.paths.bak_input,
+            # )
+            # nonlocal my_markup_path
+            for filename in files:
+                # nonlocal my_markup_path
+                if filename[-len(ending) :] == ending:
+                    log.debug("file found: filename %s, dir %s", filename, dirname)
+                    # nonlocal my_markup_path
+                    return filename
+
+
+def _clean_str_for_url(this_str):
+    clean_str = ""
+    lower = this_str.lower()
+    for ch in lower:
+        if ch.isalnum() or ch == "-" or ch == "_":
+            clean_str += ch
+        elif ch == "/" or ch == " ":
+            clean_str += "-"
+    return clean_str
 
 
 def _get_config_dict():
@@ -58,7 +90,10 @@ class Post:
         self.img_url = None
         self.content = None
         self._replace_keywords = None
+        self._import_replace_keywords()
+        self._import_post_info()
 
+    ### methods for internal use
     def _import_replace_keywords(self):
         config_dict = _get_config_dict()
         self._replace_keywords = config_dict["replace_keywords"]
@@ -73,35 +108,44 @@ class Post:
 
     def _import_post_content(self, markdown_path):
         # the post content has to be converted to a string(it comes as a big list of lines)
-        pass
+        html_lines = _markdown_file_to_html_list(markdown_path)
+        html_string = "".join(html_lines)
+        self.content = html_string
 
+    ### methods
     def fill_template(self, markdown_path, template_path):
-        self._import_replace_keywords()
-        self._import_post_info()
-        self._import_post_content(self, markdown_path)
-        # call this 5 times for post info
-        _replace_in_file(replace_keyword, new_text, path)
-        _replace_in_file(replace_keyword, new_text, path)
-        _replace_in_file(replace_keyword, new_text, path)
-        _replace_in_file(replace_keyword, new_text, path)
-        _replace_in_file(replace_keyword, new_text, path)
-        # call 1 more time for post content
-        _replace_in_file(replace_keyword, new_text, path)
+        self._import_post_content(markdown_path)
+        # call this 5 times for post info (from post_info.json file)
+        _replace_in_file(
+            self._replace_keywords["html_title"], self.html_title, template_path
+        )
+        _replace_in_file(
+            self._replace_keywords["post_title"], self.post_title, template_path
+        )
+        _replace_in_file(self._replace_keywords["date"], self.date, template_path)
+        _replace_in_file(self._replace_keywords["img_src"], self.img_src, template_path)
+        _replace_in_file(self._replace_keywords["img_url"], self.img_url, template_path)
+        # call 1 more time for post content (from markdown file in input dir)
+        _replace_in_file(self._replace_keywords["content"], self.content, template_path)
 
 
 class PathsManager:
     def __init__(self):
         self.bak_input = None
         self.bak_markdowns = None
-        self.bak_templates = None
+        self.bak_template = None
         self.blog_home = None
         self.blog_posts = None
 
-    def import_paths(self):
+        # import the paths after creating the path manager
+        self._import_paths()
+
+    def _import_paths(self):
+        log.debug("importing paths from config.json")
         config_dict = _get_config_dict()
         self.bak_input = config_dict["paths"]["bak_input"]
         self.bak_markdowns = config_dict["paths"]["bak_markdowns"]
-        self.bak_templates = config_dict["paths"]["bak_templates"]
+        self.bak_template = config_dict["paths"]["bak_template"]
         self.blog_home = config_dict["paths"]["blog_home"]
         self.blog_posts = config_dict["paths"]["blog_posts"]
 
@@ -112,9 +156,39 @@ class BlogUpdater:
         self.new_post = Post()
 
     def add_post(self):
-        # first it has to add a blog
+        # add a new page
+        # copying the template
+        my_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_")
+        this_timestamp = my_timestamp
+        this_title = _clean_str_for_url(self.new_post.post_title)
+        log.debug(
+            "attempting to join %s, %s, %s and %s",
+            self.paths.blog_posts,
+            this_timestamp,
+            this_title,
+            ".html",
+        )
+        post_path = os.path.join(
+            self.paths.blog_posts, this_timestamp + this_title + ".html"
+        )
+        shutil.copy(self.paths.bak_template, post_path)
 
-        # after that it has to update the main blog page
+        # crating markup backup
+        my_markup_filename = _get_first_file_ending_in(".md", self.paths.bak_input)
+        input_markup = os.path.join(self.paths.bak_input, my_markup_filename)
+        bak_markup = os.path.join(
+            self.paths.bak_markdowns, this_timestamp + this_title + ".md"
+        )
+        log.debug(
+            "input markup file %s will be saved as backup at %s",
+            input_markup,
+            bak_markup,
+        )
+        shutil.copy(input_markup, bak_markup)
+
+        # filling template
+        self.new_post.fill_template(bak_markup, post_path)
+        # modify main blog page
         pass
 
 
@@ -151,8 +225,13 @@ if __name__ == "__main__":
     log.debug("creating blog updater object")
     bu = BlogUpdater()
 
-    log.debug("importing paths from config file")
-    bu.paths.import_paths()
+    log.debug("creating new post")
+    bu.add_post()
 
-    log.debug("filling template")
-    bu.new_post.fill_template("hola")
+    # bu.new_post.fill_template(
+    #     "/home/lmponcio/ProjectFiles/StaticGithub/blog-generator/blog-templates/tests/my_markdown.md",
+    #     "/home/lmponcio/ProjectFiles/StaticGithub/blog-generator/blog-templates/tests/base.html",
+    # )
+
+    # log.debug("filling template")
+    # bu.new_post.fill_template("hola")
