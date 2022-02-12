@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+from sqlite3 import Timestamp
 import markdown
 import shutil
 import datetime
@@ -22,7 +23,7 @@ def _get_first_file_ending_in(ending, path):
             for filename in files:
                 # nonlocal my_markup_path
                 if filename[-len(ending) :] == ending:
-                    log.debug("file found: filename %s, dir %s", filename, dirname)
+                    log.debug("file found: filename %s", filename)
                     # nonlocal my_markup_path
                     return filename
 
@@ -54,6 +55,7 @@ def _get_post_info_dict():
 
 def _markdown_file_to_html_list(input_path):
     """translates the markdown file by returning a list of lines of code in html"""
+    log.debug("markdown file to html list started")
     temp_file_dir = os.path.dirname(os.path.realpath(__file__))
     temp_file_path = os.path.join(temp_file_dir, "temp_file.html")
     html = markdown.markdownFromFile(
@@ -62,20 +64,36 @@ def _markdown_file_to_html_list(input_path):
     )
     f = open(temp_file_path, "r")
     lines = f.readlines()
-    print(lines)
+    log.debug("html list: %s", lines)
     os.remove(temp_file_path)
     return lines
 
 
 def _replace_in_file(replace_keyword, new_text, path):
+    log.debug("replace in file started")
+    log.debug("    file to modify: %s", path)
+    log.debug("    replace keyword: %s", replace_keyword)
+    log.debug("    new text: %s", new_text)
     with open(path, "r") as file:
         data = file.read()
-        print(data)
+        # print(data)
         data = data.replace(replace_keyword, new_text)
 
     with open(path, "w") as file:
         file.write(data)
-        print()
+        # print()
+
+
+def _copy_and_timestamp(file, dst):
+    log.debug("copy and timestamp started")
+    log.debug("    destination dir: %s", dst)
+    my_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_")
+    log.debug("    timestamp: %s", my_timestamp)
+    base = os.path.basename(file)
+    log.debug("    basename: %s", base)
+    dst_path = os.path.join(my_timestamp, dst, base)
+    shutil.copy2(file, dst_path)
+    return dst_path
 
 
 ########## defining classes
@@ -94,6 +112,10 @@ class Post:
         self._import_post_info()
 
     ### methods for internal use
+    def _get_images_path(self):
+        config_dict = _get_config_dict()
+        return config_dict["paths"]["blog_images"]
+
     def _import_replace_keywords(self):
         config_dict = _get_config_dict()
         self._replace_keywords = config_dict["replace_keywords"]
@@ -102,7 +124,7 @@ class Post:
         post_info_dict = _get_post_info_dict()
         self.html_title = post_info_dict["html_title"]
         self.post_title = post_info_dict["post_title"]
-        self.date = post_info_dict["date"]
+        # self.date = post_info_dict["date"]
         self.img_src = post_info_dict["img_src"]
         self.img_url = post_info_dict["img_url"]
 
@@ -111,10 +133,15 @@ class Post:
         html_lines = _markdown_file_to_html_list(markdown_path)
         html_string = "".join(html_lines)
         self.content = html_string
+        log.debug("html string: %s", self.content)
 
     ### methods
     def fill_template(self, markdown_path, template_path):
+        log.debug("fill_template method started")
+        log.debug("fill_template markdown_path: %s", markdown_path)
+        log.debug("fill_template template_path: %s", template_path)
         self._import_post_content(markdown_path)
+
         # call this 5 times for post info (from post_info.json file)
         _replace_in_file(
             self._replace_keywords["html_title"], self.html_title, template_path
@@ -122,8 +149,14 @@ class Post:
         _replace_in_file(
             self._replace_keywords["post_title"], self.post_title, template_path
         )
+        self.date = datetime.datetime.now().strftime("%d/%m/%Y")
         _replace_in_file(self._replace_keywords["date"], self.date, template_path)
-        _replace_in_file(self._replace_keywords["img_src"], self.img_src, template_path)
+        log.debug("the image provided wil be saved")
+        images_path = self._get_images_path()
+        this_image_path = _copy_and_timestamp(self.img_src, images_path)
+        _replace_in_file(
+            self._replace_keywords["img_src"], this_image_path, template_path
+        )
         _replace_in_file(self._replace_keywords["img_url"], self.img_url, template_path)
         # call 1 more time for post content (from markdown file in input dir)
         _replace_in_file(self._replace_keywords["content"], self.content, template_path)
@@ -155,41 +188,38 @@ class BlogUpdater:
         self.paths = PathsManager()
         self.new_post = Post()
 
+    def _update_blog_index():
+        # TODO - updt here and create blog template
+        pass
+
     def add_post(self):
         # add a new page
-        # copying the template
-        my_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_")
-        this_timestamp = my_timestamp
+        # copy and timestamp the template
+        log.debug("add_post method started")
+        this_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_")
+        log.debug("file timestamp: %s", this_timestamp)
         this_title = _clean_str_for_url(self.new_post.post_title)
-        log.debug(
-            "attempting to join %s, %s, %s and %s",
-            self.paths.blog_posts,
-            this_timestamp,
-            this_title,
-            ".html",
-        )
         post_path = os.path.join(
             self.paths.blog_posts, this_timestamp + this_title + ".html"
         )
+        log.debug("template original path: %s", self.paths.bak_template)
         shutil.copy(self.paths.bak_template, post_path)
+        log.debug("template copied to path: %s", post_path)
 
-        # crating markup backup
+        # creating markup backup
         my_markup_filename = _get_first_file_ending_in(".md", self.paths.bak_input)
         input_markup = os.path.join(self.paths.bak_input, my_markup_filename)
         bak_markup = os.path.join(
             self.paths.bak_markdowns, this_timestamp + this_title + ".md"
         )
-        log.debug(
-            "input markup file %s will be saved as backup at %s",
-            input_markup,
-            bak_markup,
-        )
+        log.debug("markup original path: %s", input_markup)
         shutil.copy(input_markup, bak_markup)
+        log.debug("markup copied to path: %s", bak_markup)
 
         # filling template
         self.new_post.fill_template(bak_markup, post_path)
         # modify main blog page
-        pass
+        self._update_blog_index()
 
 
 if __name__ == "__main__":
@@ -222,16 +252,8 @@ if __name__ == "__main__":
     # log configuration ends here
     #############################
 
-    log.debug("creating blog updater object")
+    # creating blog updater object
     bu = BlogUpdater()
 
-    log.debug("creating new post")
+    # creating new post
     bu.add_post()
-
-    # bu.new_post.fill_template(
-    #     "/home/lmponcio/ProjectFiles/StaticGithub/blog-generator/blog-templates/tests/my_markdown.md",
-    #     "/home/lmponcio/ProjectFiles/StaticGithub/blog-generator/blog-templates/tests/base.html",
-    # )
-
-    # log.debug("filling template")
-    # bu.new_post.fill_template("hola")
