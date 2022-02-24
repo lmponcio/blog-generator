@@ -76,12 +76,10 @@ def _replace_in_file(replace_keyword, new_text, path):
     log.debug("    new text: %s", new_text)
     with open(path, "r") as file:
         data = file.read()
-        # print(data)
         data = data.replace(replace_keyword, new_text)
 
     with open(path, "w") as file:
         file.write(data)
-        # print()
 
 
 def _copy_and_timestamp(file, dst):
@@ -103,7 +101,8 @@ class Post:
     def __init__(self):
         self.html_title = None
         self.post_title = None
-        self.date = None
+        # self.date = None
+        self.date = datetime.datetime.now().strftime("%d/%m/%Y")
         self.img_src = None
         self.img_url = None
         self.content = None
@@ -149,7 +148,7 @@ class Post:
         _replace_in_file(
             self._replace_keywords["post_title"], self.post_title, template_path
         )
-        self.date = datetime.datetime.now().strftime("%d/%m/%Y")
+        # self.date = datetime.datetime.now().strftime("%d/%m/%Y")
         _replace_in_file(self._replace_keywords["date"], self.date, template_path)
         log.debug("the image provided wil be saved")
         images_path = self._get_images_path()
@@ -167,8 +166,10 @@ class PathsManager:
         self.bak_input = None
         self.bak_markdowns = None
         self.bak_template = None
-        self.blog_home = None
+        self.bak_template_new_post = None
+        self.blog_index = None
         self.blog_posts = None
+        self.blog_rel_to_posts = None
 
         # import the paths after creating the path manager
         self._import_paths()
@@ -179,8 +180,10 @@ class PathsManager:
         self.bak_input = config_dict["paths"]["bak_input"]
         self.bak_markdowns = config_dict["paths"]["bak_markdowns"]
         self.bak_template = config_dict["paths"]["bak_template"]
-        self.blog_home = config_dict["paths"]["blog_home"]
+        self.bak_template_new_post = config_dict["paths"]["bak_template_new_post"]
+        self.blog_index = config_dict["paths"]["blog_index"]
         self.blog_posts = config_dict["paths"]["blog_posts"]
+        self.blog_rel_to_posts = config_dict["paths"]["blog_rel_to_posts"]
 
 
 class BlogUpdater:
@@ -188,9 +191,40 @@ class BlogUpdater:
         self.paths = PathsManager()
         self.new_post = Post()
 
-    def _update_blog_index():
-        # TODO - updt here and create blog template
-        pass
+    def _update_blog_index(self, post_path):
+
+        # get raw html to add
+        template_blog_list = open(self.paths.bak_template_new_post, "r")
+        lines = template_blog_list.readlines()
+        raw_html = "".join(lines)
+
+        # add raw html
+        _replace_in_file(
+            self.new_post._replace_keywords["blog_index"],
+            raw_html,
+            self.paths.blog_index,
+        )
+
+        # building relative path
+        filename = os.path.basename(post_path)
+        rel_path = os.path.join(self.paths.blog_rel_to_posts, filename)
+
+        # replace date, title and relative path
+        _replace_in_file(
+            self.new_post._replace_keywords["date"],
+            self.new_post.date,
+            self.paths.blog_index,
+        )
+        _replace_in_file(
+            self.new_post._replace_keywords["post_title"],
+            self.new_post.post_title,
+            self.paths.blog_index,
+        )
+        _replace_in_file(
+            self.new_post._replace_keywords["post_rel_path"],
+            rel_path,
+            self.paths.blog_index,
+        )
 
     def add_post(self):
         # add a new page
@@ -219,7 +253,7 @@ class BlogUpdater:
         # filling template
         self.new_post.fill_template(bak_markup, post_path)
         # modify main blog page
-        self._update_blog_index()
+        self._update_blog_index(post_path)
 
 
 if __name__ == "__main__":
